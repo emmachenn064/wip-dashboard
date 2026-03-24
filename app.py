@@ -2,6 +2,36 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+import google.auth
+
+@st.cache_resource
+def get_drive_service():
+    """建立 Google Drive API 服務連結"""
+    # 使用預設憑證 (在 Google Cloud 環境下會自動取得)
+    creds, project = google.auth.default(
+        scopes=['https://www.googleapis.com/auth/drive.readonly']
+    )
+    return build('drive', 'v3', credentials=creds)
+
+def list_drive_files(folder_id):
+    """列出指定資料夾中的 .xlsx 檔案"""
+    service = get_drive_service()
+    query = f"'{folder_id}' in parents and name contains '.xlsx' and trashed = false"
+    results = service.files().list(q=query, fields="files(id, name)").execute()
+    return results.get('files', [])
+
+def download_file(file_id):
+    """下載 Drive 檔案內容至記憶體"""
+    service = get_drive_service()
+    request = service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while done is False:
+        status, done = downloader.next_chunk()
+    return fh.getvalue()
 
 # --- 1. Global Configuration ---
 st.set_page_config(page_title="KYEC WIP E2E Management Dashboard", layout="wide")
@@ -46,6 +76,31 @@ st.markdown(flow_html, unsafe_allow_html=True)
 st.markdown("---")
 
 uploaded_file = st.file_uploader("📥 Upload ZC13 WIP Master File (.xlsx)", type=['xlsx'])
+
+st.subheader("📥 選取 ZC13 WIP Master File")
+try:
+    drive_files = list_drive_files(DRIVE_FOLDER_ID)
+    if drive_files:
+        file_options = {f['name']: f['id'] for f in drive_files}
+        selected_file_name = st.selectbox("請從 Google Drive 選擇檔案：", options=list(file_options.keys()))
+        
+        if st.button("確認讀取所選檔案"):
+            file_id = file_options[selected_file_name]
+            with st.spinner(f"正在從 Drive 下載 {selected_file_name}..."):
+                file_content = download_file(file_id)
+                xls = pd.ExcelFile(io.BytesIO(file_content))
+                # 接下來延用你原本的處理邏輯 (如 specs, df_curr, df_demand 等)
+                st.success(f"成功載入: {selected_file_name}")
+    else:
+        st.warning("在指定資料夾中找不到 .xlsx 檔案，請檢查權限或資料夾 ID。")
+except Exception as e:
+    st.error(f"連線至 Google Drive 失敗: {e}")
+    # 備援方案：保留原本的上傳功能
+    uploaded_file = st.file_uploader("或手動上傳檔案", type=['xlsx'])
+    if uploaded_file:
+        xls = pd.ExcelFile(uploaded_file)
+
+
 
 if uploaded_file:
     try:
