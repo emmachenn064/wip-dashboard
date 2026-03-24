@@ -6,6 +6,8 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import google.auth
 
+DRIVE_FOLDER_ID = "1M7IeV5EUVQE_flLW9X7eJaR59fHIYwxp" 
+
 @st.cache_resource
 def get_drive_service():
     """建立 Google Drive API 服務連結"""
